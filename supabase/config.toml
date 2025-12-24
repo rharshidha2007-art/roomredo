@@ -1,0 +1,4 @@
+project_id = "vvzdjiowrgwnhswmgibx"
+
+[functions.analyze-room]
+verify_jwt = false

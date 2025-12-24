@@ -6,6 +6,7 @@ import { AnalysisResults } from "@/components/AnalysisResults";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 type Suggestion = {
   title: string;
@@ -17,6 +18,9 @@ const Index = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [currentLayout, setCurrentLayout] = useState<string>("");
   const { toast } = useToast();
 
   const handleImageUpload = useCallback((file: File) => {
@@ -24,6 +28,9 @@ const Index = () => {
     reader.onload = (e) => {
       setUploadedImage(e.target?.result as string);
       setSuggestions([]);
+      setGeneratedImage(null);
+      setImageError(null);
+      setCurrentLayout("");
     };
     reader.readAsDataURL(file);
   }, []);
@@ -31,6 +38,9 @@ const Index = () => {
   const handleClear = useCallback(() => {
     setUploadedImage(null);
     setSuggestions([]);
+    setGeneratedImage(null);
+    setImageError(null);
+    setCurrentLayout("");
   }, []);
 
   const analyzeRoom = useCallback(async () => {
@@ -38,41 +48,45 @@ const Index = () => {
 
     setIsAnalyzing(true);
     setSuggestions([]);
+    setGeneratedImage(null);
+    setImageError(null);
+    setCurrentLayout("");
 
-    // Simulate AI analysis with realistic delay
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-room', {
+        body: { imageBase64: uploadedImage }
+      });
 
-    // Mock suggestions - in production, this would come from an AI API
-    const mockSuggestions: Suggestion[] = [
-      {
-        title: "Create a Conversation Zone",
-        description: "Try angling your sofa 45 degrees toward the window and adding a pair of accent chairs facing it. This creates an inviting space for conversation while taking advantage of natural light.",
-        icon: "layout",
-      },
-      {
-        title: "Add Visual Balance",
-        description: "Consider placing a tall floor lamp or potted plant in the corner opposite your main furniture grouping. This will balance the visual weight of the room and add vertical interest.",
-        icon: "lightbulb",
-      },
-      {
-        title: "Layer Your Textures",
-        description: "Introduce a woven jute rug under your seating area and layer throw pillows in warm terracotta and sage tones. This adds depth and warmth to your space.",
-        icon: "palette",
-      },
-      {
-        title: "Optimize Traffic Flow",
-        description: "Move the coffee table slightly closer to the sofa (about 18 inches away) and ensure there's at least 36 inches for walkways. This creates better functionality while maintaining openness.",
-        icon: "sparkles",
-      },
-    ];
+      if (error) {
+        console.error("Analysis error:", error);
+        throw new Error(error.message || "Failed to analyze room");
+      }
 
-    setSuggestions(mockSuggestions);
-    setIsAnalyzing(false);
+      if (data.error) {
+        throw new Error(data.error);
+      }
 
-    toast({
-      title: "Analysis Complete!",
-      description: "We've generated personalized suggestions for your space.",
-    });
+      setSuggestions(data.suggestions || []);
+      setGeneratedImage(data.generatedImage || null);
+      setImageError(data.imageError || null);
+      setCurrentLayout(data.currentLayout || "");
+
+      toast({
+        title: "Analysis Complete!",
+        description: data.generatedImage 
+          ? "We've generated your redesigned room and personalized suggestions."
+          : "We've generated personalized suggestions for your space.",
+      });
+    } catch (error) {
+      console.error("Error analyzing room:", error);
+      toast({
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Could not analyze the room. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   }, [uploadedImage, toast]);
 
   return (
@@ -90,7 +104,7 @@ const Index = () => {
             isLoading={isAnalyzing}
           />
 
-          {uploadedImage && suggestions.length === 0 && !isAnalyzing && (
+          {uploadedImage && suggestions.length === 0 && !isAnalyzing && !generatedImage && (
             <div 
               className="flex justify-center mt-8 opacity-0 animate-fade-in"
               style={{ animationDelay: "300ms", animationFillMode: "forwards" }}
@@ -102,7 +116,7 @@ const Index = () => {
                 className="gap-3"
               >
                 <Sparkles className="w-5 h-5" />
-                Analyze My Room
+                Analyze & Redesign My Room
               </Button>
             </div>
           )}
@@ -112,8 +126,26 @@ const Index = () => {
           <AnalysisResults 
             isLoading={isAnalyzing}
             suggestions={suggestions}
+            generatedImage={generatedImage}
+            imageError={imageError}
+            currentLayout={currentLayout}
           />
         </section>
+
+        {/* Re-analyze button after results */}
+        {(suggestions.length > 0 || generatedImage) && !isAnalyzing && (
+          <section className="px-6 py-8 flex justify-center">
+            <Button 
+              variant="soft" 
+              size="lg"
+              onClick={analyzeRoom}
+              className="gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Generate Another Design
+            </Button>
+          </section>
+        )}
       </main>
 
       <footer className="py-8 px-6 border-t border-border/50">
